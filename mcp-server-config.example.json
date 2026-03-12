@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "zepp-life": {
+      "command": "zepp-life-mcp",
+      "args": ["serve"]
+    }
+  }
+}
