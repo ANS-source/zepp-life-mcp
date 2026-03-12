@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -17,7 +17,7 @@ class SyncService:
 
     def __init__(self, adapter: DataAdapter, db: Database):
         """Initialize sync service.
-        
+
         Args:
             adapter: Data source adapter
             db: Database instance
@@ -42,13 +42,13 @@ class SyncService:
         force_full: bool = False,
     ) -> dict:
         """Synchronize a specific data type.
-        
+
         Args:
             data_type: Type of data to sync (daily_activity, sleep, workouts, body_measurements)
             start_date: Start date (YYYY-MM-DD), defaults to 30 days ago
             end_date: End date (YYYY-MM-DD), defaults to today
             force_full: Force full sync ignoring last sync state
-            
+
         Returns:
             Dict with sync statistics
         """
@@ -158,7 +158,7 @@ class SyncService:
         force_full: bool = False,
     ) -> dict:
         """Synchronous wrapper for sync_data_type.
-        
+
         Use this when calling from synchronous code.
         """
         return asyncio.run(self.sync_data_type(data_type, start_date, end_date, force_full))

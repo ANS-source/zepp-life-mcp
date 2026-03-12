@@ -13,7 +13,6 @@ from zepp_life_mcp.models import (
     DailyActivity,
     HeartRateSample,
     SleepSession,
-    SleepStage,
     Workout,
 )
 
@@ -23,7 +22,7 @@ class ExportFileAdapter(DataAdapter):
 
     def __init__(self, export_path: Path):
         """Initialize adapter.
-        
+
         Args:
             export_path: Path to exported data directory
         """
@@ -39,25 +38,25 @@ class ExportFileAdapter(DataAdapter):
 
         # Check for common export file patterns
         self._available_types = []
-        
+
         # Look for activity data
         if self._find_activity_files():
             self._available_types.append("daily_activity")
-        
+
         # Look for sleep data
         if self._find_sleep_files():
             self._available_types.append("sleep")
-        
+
         # Look for workout data
         if self._find_workout_files():
             self._available_types.append("workouts")
-        
+
         # Look for body/weight data
         if self._find_body_files():
             self._available_types.append("body_measurements")
 
         self._connected = len(self._available_types) > 0
-        
+
         # Try to extract user ID from any available file
         if self._connected:
             self._user_id = self._extract_user_id()
@@ -134,18 +133,18 @@ class ExportFileAdapter(DataAdapter):
         # Look for user info files
         user_files = list(self.export_path.glob("*user*.json"))
         user_files.extend(self.export_path.glob("*profile*.json"))
-        
+
         for file_path in user_files:
             try:
-                with open(file_path, "r", encoding="utf-8") as f:
+                with open(file_path, encoding="utf-8") as f:
                     data = json.load(f)
                     if "user_id" in data:
                         return str(data["user_id"])
                     if "id" in data:
                         return str(data["id"])
-            except (json.JSONDecodeError, KeyError, IOError):
+            except (OSError, json.JSONDecodeError, KeyError):
                 continue
-        
+
         # Generate a synthetic user ID based on export path
         return f"export_{self.export_path.stat().st_mtime_ns}"
 
@@ -156,7 +155,7 @@ class ExportFileAdapter(DataAdapter):
     ) -> Iterator[DailyActivity]:
         """Iterate over daily activity records from export files."""
         files = self._find_activity_files()
-        
+
         for file_path in files:
             try:
                 yield from self._parse_activity_file(file_path, start_date, end_date)
@@ -171,16 +170,16 @@ class ExportFileAdapter(DataAdapter):
         end_date: str | None,
     ) -> Iterator[DailyActivity]:
         """Parse a single activity file."""
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(file_path, encoding="utf-8", errors="ignore") as f:
             # Try to detect dialect
             sample = f.read(8192)
             f.seek(0)
-            
+
             # Check if it's JSON
             if sample.strip().startswith("[") or sample.strip().startswith("{"):
                 yield from self._parse_activity_json(file_path, start_date, end_date)
                 return
-            
+
             # Try CSV
             try:
                 reader = csv.DictReader(f)
@@ -198,7 +197,7 @@ class ExportFileAdapter(DataAdapter):
         end_date: str | None,
     ) -> Iterator[DailyActivity]:
         """Parse activity data from JSON file."""
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             try:
                 data = json.load(f)
                 if isinstance(data, list):
@@ -211,7 +210,9 @@ class ExportFileAdapter(DataAdapter):
                     if "data" in data and isinstance(data["data"], list):
                         for item in data["data"]:
                             activity = self._dict_to_activity(item)
-                            if activity and self._date_in_range(activity.date, start_date, end_date):
+                            if activity and self._date_in_range(
+                                activity.date, start_date, end_date
+                            ):
                                 yield activity
                     else:
                         activity = self._dict_to_activity(data)
@@ -228,7 +229,7 @@ class ExportFileAdapter(DataAdapter):
             if key in row and row[key]:
                 date = self._normalize_date(row[key])
                 break
-        
+
         if not date:
             return None
 
@@ -285,7 +286,7 @@ class ExportFileAdapter(DataAdapter):
             if key in data and data[key]:
                 date = self._normalize_date(str(data[key]))
                 break
-        
+
         if not date:
             return None
 
@@ -337,7 +338,7 @@ class ExportFileAdapter(DataAdapter):
     ) -> Iterator[SleepSession]:
         """Iterate over sleep session records."""
         files = self._find_sleep_files()
-        
+
         for file_path in files:
             try:
                 yield from self._parse_sleep_file(file_path, start_date, end_date)
@@ -352,10 +353,10 @@ class ExportFileAdapter(DataAdapter):
         end_date: str | None,
     ) -> Iterator[SleepSession]:
         """Parse sleep data file."""
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(file_path, encoding="utf-8", errors="ignore") as f:
             sample = f.read(8192)
             f.seek(0)
-            
+
             if sample.strip().startswith("[") or sample.strip().startswith("{"):
                 yield from self._parse_sleep_json(file_path, start_date, end_date)
             else:
@@ -378,7 +379,7 @@ class ExportFileAdapter(DataAdapter):
         end_date: str | None,
     ) -> Iterator[SleepSession]:
         """Parse sleep data from JSON."""
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             try:
                 data = json.load(f)
                 if isinstance(data, list):
@@ -411,22 +412,22 @@ class ExportFileAdapter(DataAdapter):
             # Try to extract start/end times
             start = None
             end = None
-            
+
             for key in ["start", "startTime", "start_time", "bedtime"]:
                 if key in data and data[key]:
                     start = self._parse_datetime(str(data[key]))
                     break
-            
+
             for key in ["end", "endTime", "end_time", "wake_time", "wakeup"]:
                 if key in data and data[key]:
                     end = self._parse_datetime(str(data[key]))
                     break
-            
+
             if not start or not end:
                 return None
 
             duration = int((end - start).total_seconds() / 60)
-            
+
             # Extract sleep score if available
             score = None
             for key in ["score", "sleepScore", "sleep_score", "quality"]:
@@ -460,7 +461,7 @@ class ExportFileAdapter(DataAdapter):
     ) -> Iterator[Workout]:
         """Iterate over workout records."""
         files = self._find_workout_files()
-        
+
         for file_path in files:
             try:
                 yield from self._parse_workout_file(file_path, start_date, end_date)
@@ -475,10 +476,10 @@ class ExportFileAdapter(DataAdapter):
         end_date: str | None,
     ) -> Iterator[Workout]:
         """Parse workout data file."""
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(file_path, encoding="utf-8", errors="ignore") as f:
             sample = f.read(8192)
             f.seek(0)
-            
+
             if sample.strip().startswith("[") or sample.strip().startswith("{"):
                 yield from self._parse_workout_json(file_path, start_date, end_date)
             else:
@@ -500,7 +501,7 @@ class ExportFileAdapter(DataAdapter):
         end_date: str | None,
     ) -> Iterator[Workout]:
         """Parse workout data from JSON."""
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             try:
                 data = json.load(f)
                 if isinstance(data, list):
@@ -538,27 +539,26 @@ class ExportFileAdapter(DataAdapter):
             # Extract start/end times
             start = None
             end = None
-            
+
             for key in ["start", "startTime", "start_time", "begin_time"]:
                 if key in data and data[key]:
                     start = self._parse_datetime(str(data[key]))
                     break
-            
+
             for key in ["end", "endTime", "end_time", "stop_time"]:
                 if key in data and data[key]:
                     end = self._parse_datetime(str(data[key]))
                     break
-            
+
             if not start:
                 return None
-            
+
             if not end:
                 # Try to calculate from duration
-                duration_minutes = 0
                 for key in ["duration", "duration_minutes", "time", "elapsed"]:
                     if key in data:
                         try:
-                            duration_minutes = int(float(data[key]))
+                            int(float(data[key]))
                             break
                         except (ValueError, TypeError):
                             continue
@@ -612,7 +612,7 @@ class ExportFileAdapter(DataAdapter):
     ) -> Iterator[BodyMeasurement]:
         """Iterate over body measurement records."""
         files = self._find_body_files()
-        
+
         for file_path in files:
             try:
                 yield from self._parse_body_file(file_path, start_date, end_date)
@@ -627,10 +627,10 @@ class ExportFileAdapter(DataAdapter):
         end_date: str | None,
     ) -> Iterator[BodyMeasurement]:
         """Parse body measurement file."""
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(file_path, encoding="utf-8", errors="ignore") as f:
             sample = f.read(8192)
             f.seek(0)
-            
+
             if sample.strip().startswith("[") or sample.strip().startswith("{"):
                 yield from self._parse_body_json(file_path, start_date, end_date)
             else:
@@ -652,7 +652,7 @@ class ExportFileAdapter(DataAdapter):
         end_date: str | None,
     ) -> Iterator[BodyMeasurement]:
         """Parse body data from JSON."""
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             try:
                 data = json.load(f)
                 if isinstance(data, list):
@@ -686,7 +686,7 @@ class ExportFileAdapter(DataAdapter):
                 if key in data and data[key]:
                     timestamp = self._parse_datetime(str(data[key]))
                     break
-            
+
             if not timestamp:
                 return None
 
@@ -699,7 +699,7 @@ class ExportFileAdapter(DataAdapter):
                         break
                     except (ValueError, TypeError):
                         continue
-            
+
             if not weight:
                 return None
 
@@ -775,14 +775,14 @@ class ExportFileAdapter(DataAdapter):
             "%Y-%m-%dT%H:%M:%S",
             "%Y-%m-%dT%H:%M:%SZ",
         ]
-        
+
         for fmt in formats:
             try:
                 dt = datetime.strptime(date_str.strip(), fmt)
                 return dt.strftime("%Y-%m-%d")
             except ValueError:
                 continue
-        
+
         # If all else fails, return as-is
         return date_str[:10] if len(date_str) >= 10 else date_str
 
@@ -800,20 +800,20 @@ class ExportFileAdapter(DataAdapter):
             "%d.%m.%Y %H:%M:%S",
             "%d/%m/%Y %H:%M:%S",
         ]
-        
+
         for fmt in formats:
             try:
                 return datetime.strptime(dt_str.strip(), fmt)
             except ValueError:
                 continue
-        
+
         # Try Unix timestamp
         try:
             timestamp = float(dt_str)
             return datetime.fromtimestamp(timestamp)
         except ValueError:
             pass
-        
+
         raise ValueError(f"Unable to parse datetime: {dt_str}")
 
     def _date_in_range(
@@ -825,6 +825,4 @@ class ExportFileAdapter(DataAdapter):
         """Check if date is within range."""
         if start_date and date < start_date:
             return False
-        if end_date and date > end_date:
-            return False
-        return True
+        return not (end_date and date > end_date)

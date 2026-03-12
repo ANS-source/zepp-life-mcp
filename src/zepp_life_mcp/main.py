@@ -7,12 +7,12 @@ from pathlib import Path
 
 from zepp_life_mcp.adapters.cloud_session import CloudSessionAdapter
 from zepp_life_mcp.adapters.export_file import ExportFileAdapter
-from zepp_life_mcp.auth import load_token, save_token, setup_interactive as setup_cloud_auth
+from zepp_life_mcp.auth import load_token, save_token
+from zepp_life_mcp.auth import setup_interactive as setup_cloud_auth
 from zepp_life_mcp.config import Config, get_config_path, load_config, save_config
 from zepp_life_mcp.server import main as server_main
-from zepp_life_mcp.storage import Database
 from zepp_life_mcp.services.sync_service import SyncService
-
+from zepp_life_mcp.storage import Database
 
 PROGRAM_NAME = "zepp-life-mcp"
 
@@ -219,7 +219,11 @@ def main():
     subparsers.add_parser("doctor", help="Check configuration and diagnose issues")
 
     sync_parser = subparsers.add_parser("sync", help="Sync data from source")
-    sync_parser.add_argument("--type", choices=["daily_activity", "sleep", "workouts", "body_measurements", "heart_rate"], help="Type of data to sync")
+    sync_parser.add_argument(
+        "--type",
+        choices=["daily_activity", "sleep", "workouts", "body_measurements", "heart_rate"],
+        help="Type of data to sync",
+    )
     sync_parser.add_argument("--start-date", help="Start date (YYYY-MM-DD)")
     sync_parser.add_argument("--end-date", help="End date (YYYY-MM-DD)")
 

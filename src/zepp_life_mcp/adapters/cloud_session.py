@@ -435,7 +435,11 @@ class CloudSessionAdapter(DataAdapter):
                 run_time = item.get("run_time", 0)
                 end_ts = int(float(end_time)) if end_time else None
                 duration_sec = int(float(run_time)) if run_time else 0
-                start_ts = int(float(start_time)) if start_time else (end_ts - duration_sec if end_ts else None)
+                start_ts = (
+                    int(float(start_time))
+                    if start_time
+                    else (end_ts - duration_sec if end_ts else None)
+                )
 
                 if start_ts:
                     workout_date = datetime.fromtimestamp(start_ts).strftime("%Y-%m-%d")
@@ -459,8 +463,12 @@ class CloudSessionAdapter(DataAdapter):
                     duration_minutes=duration_min,
                     distance_m=float(item.get("dis", 0)) if item.get("dis") else None,
                     calories_kcal=float(item.get("calorie", 0)) if item.get("calorie") else None,
-                    avg_heart_rate_bpm=int(float(item.get("avg_heart_rate"))) if item.get("avg_heart_rate") else None,
-                    max_heart_rate_bpm=int(float(item.get("max_heart_rate"))) if item.get("max_heart_rate") else None,
+                    avg_heart_rate_bpm=int(float(item.get("avg_heart_rate")))
+                    if item.get("avg_heart_rate")
+                    else None,
+                    max_heart_rate_bpm=int(float(item.get("max_heart_rate")))
+                    if item.get("max_heart_rate")
+                    else None,
                 )
 
         except Exception as e:
@@ -504,16 +512,24 @@ class CloudSessionAdapter(DataAdapter):
                     provider="zepp_life",
                     source_type="cloud_session",
                     user_id=self.user_id or "unknown",
-                    timestamp=datetime.fromtimestamp(record_time) if record_time else datetime.now(),
+                    timestamp=datetime.fromtimestamp(record_time)
+                    if record_time
+                    else datetime.now(),
                     weight_kg=summary.get("weight", 0),
                     bmi=summary.get("bmi"),
                     body_fat_pct=summary.get("fatRate"),
                     muscle_mass_kg=summary.get("muscleRate"),
                     water_pct=summary.get("bodyWaterRate"),
                     bone_mass_kg=summary.get("boneMass"),
-                    visceral_fat_score=int(summary.get("visceralFat", 0)) if summary.get("visceralFat") else None,
-                    basal_metabolism_kcal=int(summary.get("metabolism", 0)) if summary.get("metabolism") else None,
-                    metabolic_age=int(summary.get("muscleAge", 0)) if summary.get("muscleAge") else None,
+                    visceral_fat_score=int(summary.get("visceralFat", 0))
+                    if summary.get("visceralFat")
+                    else None,
+                    basal_metabolism_kcal=int(summary.get("metabolism", 0))
+                    if summary.get("metabolism")
+                    else None,
+                    metabolic_age=int(summary.get("muscleAge", 0))
+                    if summary.get("muscleAge")
+                    else None,
                 )
 
         except Exception as e:

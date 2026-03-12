@@ -2,6 +2,7 @@
 
 import logging
 import webbrowser
+from contextlib import suppress
 
 import keyring
 
@@ -27,14 +28,10 @@ def load_token() -> tuple[str | None, str | None]:
 
 
 def delete_token() -> None:
-    try:
+    with suppress(keyring.errors.PasswordDeleteError):
         keyring.delete_password(SERVICE_NAME, f"{ACCOUNT_NAME}_token")
-    except keyring.errors.PasswordDeleteError:
-        pass
-    try:
+    with suppress(keyring.errors.PasswordDeleteError):
         keyring.delete_password(SERVICE_NAME, f"{ACCOUNT_NAME}_user_id")
-    except keyring.errors.PasswordDeleteError:
-        pass
 
 
 def get_auth_instructions() -> str:
