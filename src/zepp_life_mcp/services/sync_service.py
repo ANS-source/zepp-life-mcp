@@ -129,6 +129,16 @@ class SyncService:
                 if last_ts is None or sample.timestamp > last_ts:
                     last_ts = sample.timestamp
 
+            if hasattr(self.adapter, "iter_resting_heart_rate"):
+                resting_records = self.adapter.iter_resting_heart_rate(start_date, end_date)
+                async for sample in self._iterate_records(resting_records):
+                    if self.db.insert_heart_rate_sample(sample):
+                        added += 1
+                    else:
+                        updated += 1
+                    if last_ts is None or sample.timestamp > last_ts:
+                        last_ts = sample.timestamp
+
         else:
             raise ValueError(f"Unknown data type: {data_type}")
 

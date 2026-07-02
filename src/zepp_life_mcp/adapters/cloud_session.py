@@ -408,6 +408,67 @@ class CloudSessionAdapter(DataAdapter):
         except Exception as e:
             logger.error(f"Error fetching heart rate: {e}")
 
+    async def iter_resting_heart_rate(
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> AsyncIterator[HeartRateSample]:
+        """Iterate over resting heart rate samples derived from nightly sleep summaries."""
+        if not self._client or not self.is_connected():
+            return
+            yield
+
+        if not end_date:
+            end_date = datetime.now().strftime("%Y-%m-%d")
+        if not start_date:
+            start_dt = datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=30)
+            start_date = start_dt.strftime("%Y-%m-%d")
+
+        try:
+            response = await self._client.get(
+                "/v1/data/band_data.json",
+                params={
+                    "query_type": "summary",
+                    "device_type": "android_phone",
+                    "userid": self.user_id,
+                    "from_date": start_date,
+                    "to_date": end_date,
+                },
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Failed to fetch resting heart rate: {response.status_code}")
+                return
+
+            data = response.json()
+            parsed_data = self._parse_band_data(data)
+
+            for date_str, day_data in self._iter_band_summary_entries(parsed_data):
+                sleep_data = day_data.get("slp", {})
+                rhr = sleep_data.get("rhr")
+                if not rhr or rhr <= 0:
+                    continue
+
+                wake_ts = sleep_data.get("ed")
+                timestamp = (
+                    datetime.fromtimestamp(wake_ts)
+                    if wake_ts
+                    else datetime.strptime(date_str, "%Y-%m-%d")
+                )
+
+                yield HeartRateSample(
+                    id=f"cloud_rhr_{date_str}",
+                    provider="zepp_life",
+                    source_type="cloud_session",
+                    user_id=self.user_id or "unknown",
+                    timestamp=timestamp,
+                    bpm=rhr,
+                    sample_type="resting",
+                )
+
+        except Exception as e:
+            logger.error(f"Error fetching resting heart rate: {e}")
+
     async def iter_workouts(
         self,
         start_date: str | None = None,
