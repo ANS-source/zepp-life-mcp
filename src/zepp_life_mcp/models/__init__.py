@@ -111,6 +111,24 @@ class StressSample(BaseEntity):
     timestamp: datetime = Field(description="Measurement time")
     stress_score: int = Field(ge=0, le=100, description="Stress score")
     level: Literal["low", "medium", "high"] = Field(description="Stress level category")
+    min_stress: int | None = Field(None, ge=0, le=100, description="Minimum stress score for the day")
+    max_stress: int | None = Field(None, ge=0, le=100, description="Maximum stress score for the day")
+
+
+class ReadinessSample(BaseEntity):
+    """Daily readiness/recovery score."""
+
+    timestamp: datetime = Field(description="When the readiness score was computed")
+    readiness_score: int | None = Field(None, ge=0, le=100, description="Overall readiness score")
+    physical_score: int | None = Field(None, ge=0, le=100, description="Physical readiness sub-score")
+    mental_score: int | None = Field(None, ge=0, le=100, description="Mental readiness sub-score")
+    rhr_score: int | None = Field(None, ge=0, le=100, description="Resting heart rate score")
+    ahi_score: int | None = Field(None, ge=0, le=100, description="Apnea-hypopnea index score")
+    afib_score: int | None = Field(None, ge=0, le=100, description="Atrial fibrillation score")
+    skin_temp_score: int | None = Field(None, ge=0, le=100, description="Skin temperature score")
+    sleep_hrv: int | None = Field(None, ge=0, description="Sleep HRV in milliseconds")
+    hrv_score: int | None = Field(None, ge=0, le=100, description="HRV score")
+    hrv_baseline: int | None = Field(None, ge=0, description="HRV baseline")
 
 
 class UserProfile(BaseModel):

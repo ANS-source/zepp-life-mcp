@@ -286,6 +286,50 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="query_readiness",
+            description="Query daily readiness/recovery scores (includes HRV) for a date range",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "start_date": {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                    },
+                    "force_refresh": {
+                        "type": "boolean",
+                        "description": "Auto-sync stale/missing data for the requested range before answering (default true)",
+                    },
+                },
+                "required": ["start_date", "end_date"],
+            },
+        ),
+        Tool(
+            name="query_stress",
+            description="Query daily stress score aggregates for a date range",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "start_date": {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                    },
+                    "force_refresh": {
+                        "type": "boolean",
+                        "description": "Auto-sync stale/missing data for the requested range before answering (default true)",
+                    },
+                },
+                "required": ["start_date", "end_date"],
+            },
+        ),
+        Tool(
             name="get_data_coverage",
             description="Get data coverage information - which dates have data for each type",
             inputSchema={
@@ -326,6 +370,10 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             result = await _handle_query_heart_rate(arguments)
         elif name == "query_body_measurements":
             result = await _handle_query_body_measurements(arguments)
+        elif name == "query_readiness":
+            result = await _handle_query_readiness(arguments)
+        elif name == "query_stress":
+            result = await _handle_query_stress(arguments)
         elif name == "get_data_coverage":
             result = await _handle_get_data_coverage(arguments)
         else:
@@ -376,7 +424,15 @@ async def _handle_get_connection_status() -> dict:
     available_types = []
 
     if db:
-        for data_type in ["daily_activity", "sleep", "heart_rate", "workouts", "body_measurements"]:
+        for data_type in [
+            "daily_activity",
+            "sleep",
+            "heart_rate",
+            "workouts",
+            "body_measurements",
+            "readiness",
+            "stress",
+        ]:
             state = db.get_sync_state(data_type)
             if state and state.get("last_sync_at"):
                 available_types.append(data_type)
@@ -756,6 +812,70 @@ async def _handle_query_body_measurements(arguments: dict) -> dict:
             data={
                 "measurements": measurements,
                 "count": len(measurements),
+            },
+        ).model_dump()
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+        }
+
+
+async def _handle_query_readiness(arguments: dict) -> dict:
+    """Handle query_readiness tool."""
+    global query_service
+
+    if not query_service:
+        return {
+            "status": "error",
+            "error": "Query service not initialized",
+        }
+
+    start_date = arguments["start_date"]
+    end_date = arguments["end_date"]
+
+    await _maybe_refresh("readiness", start_date, end_date, arguments.get("force_refresh", True))
+
+    try:
+        samples = query_service.get_readiness_samples(start_date=start_date, end_date=end_date)
+        return QueryResponse(
+            status="ok",
+            source="cache",
+            data={
+                "samples": samples,
+                "count": len(samples),
+            },
+        ).model_dump()
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+        }
+
+
+async def _handle_query_stress(arguments: dict) -> dict:
+    """Handle query_stress tool."""
+    global query_service
+
+    if not query_service:
+        return {
+            "status": "error",
+            "error": "Query service not initialized",
+        }
+
+    start_date = arguments["start_date"]
+    end_date = arguments["end_date"]
+
+    await _maybe_refresh("stress", start_date, end_date, arguments.get("force_refresh", True))
+
+    try:
+        samples = query_service.get_stress_samples(start_date=start_date, end_date=end_date)
+        return QueryResponse(
+            status="ok",
+            source="cache",
+            data={
+                "samples": samples,
+                "count": len(samples),
             },
         ).model_dump()
     except Exception as e:

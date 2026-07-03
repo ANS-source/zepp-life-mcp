@@ -139,6 +139,30 @@ class SyncService:
                     if last_ts is None or sample.timestamp > last_ts:
                         last_ts = sample.timestamp
 
+        elif data_type == "readiness":
+            if not hasattr(self.adapter, "iter_readiness"):
+                raise ValueError(f"Adapter does not support {data_type}")
+            records = self.adapter.iter_readiness(start_date, end_date)
+            async for sample in self._iterate_records(records):
+                if self.db.insert_readiness_sample(sample):
+                    added += 1
+                else:
+                    updated += 1
+                if last_ts is None or sample.timestamp > last_ts:
+                    last_ts = sample.timestamp
+
+        elif data_type == "stress":
+            if not hasattr(self.adapter, "iter_stress"):
+                raise ValueError(f"Adapter does not support {data_type}")
+            records = self.adapter.iter_stress(start_date, end_date)
+            async for sample in self._iterate_records(records):
+                if self.db.insert_stress_sample(sample):
+                    added += 1
+                else:
+                    updated += 1
+                if last_ts is None or sample.timestamp > last_ts:
+                    last_ts = sample.timestamp
+
         else:
             raise ValueError(f"Unknown data type: {data_type}")
 

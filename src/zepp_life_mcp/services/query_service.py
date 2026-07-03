@@ -303,6 +303,46 @@ class QueryService:
             return samples[:limit]
         return samples
 
+    def get_readiness_samples(self, start_date: str, end_date: str) -> list[dict[str, Any]]:
+        """Get daily readiness/recovery scores for date range."""
+        records = self.db.query_readiness_samples(self.user_id, start_date, end_date)
+
+        samples = []
+        for record in records:
+            samples.append(
+                {
+                    "timestamp": record["timestamp"],
+                    "readiness_score": record.get("readiness_score"),
+                    "physical_score": record.get("physical_score"),
+                    "mental_score": record.get("mental_score"),
+                    "rhr_score": record.get("rhr_score"),
+                    "ahi_score": record.get("ahi_score"),
+                    "afib_score": record.get("afib_score"),
+                    "skin_temp_score": record.get("skin_temp_score"),
+                    "sleep_hrv": record.get("sleep_hrv"),
+                    "hrv_score": record.get("hrv_score"),
+                    "hrv_baseline": record.get("hrv_baseline"),
+                }
+            )
+        return samples
+
+    def get_stress_samples(self, start_date: str, end_date: str) -> list[dict[str, Any]]:
+        """Get daily stress score aggregates for date range."""
+        records = self.db.query_stress_samples(self.user_id, start_date, end_date)
+
+        samples = []
+        for record in records:
+            samples.append(
+                {
+                    "timestamp": record["timestamp"],
+                    "stress_score": record["stress_score"],
+                    "level": record["level"],
+                    "min_stress": record.get("min_stress"),
+                    "max_stress": record.get("max_stress"),
+                }
+            )
+        return samples
+
     def get_data_coverage(self, data_types: list[str] | None = None) -> list[dict[str, Any]]:
         """Get data coverage information."""
         coverage = self.db.get_data_coverage(self.user_id)

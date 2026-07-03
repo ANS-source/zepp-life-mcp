@@ -11,7 +11,9 @@ from zepp_life_mcp.models import (
     BodyMeasurement,
     DailyActivity,
     HeartRateSample,
+    ReadinessSample,
     SleepSession,
+    StressSample,
     Workout,
 )
 
@@ -169,6 +171,52 @@ class Database:
                 )
             """)
 
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS readiness_samples (
+                    id TEXT PRIMARY KEY,
+                    provider TEXT NOT NULL,
+                    source_type TEXT NOT NULL,
+                    source_record_id TEXT,
+                    user_id TEXT NOT NULL,
+                    device_id TEXT,
+                    timezone TEXT DEFAULT 'UTC',
+                    collected_at TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    timestamp TIMESTAMP NOT NULL,
+                    readiness_score INTEGER,
+                    physical_score INTEGER,
+                    mental_score INTEGER,
+                    rhr_score INTEGER,
+                    ahi_score INTEGER,
+                    afib_score INTEGER,
+                    skin_temp_score INTEGER,
+                    sleep_hrv INTEGER,
+                    hrv_score INTEGER,
+                    hrv_baseline INTEGER
+                )
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS stress_samples (
+                    id TEXT PRIMARY KEY,
+                    provider TEXT NOT NULL,
+                    source_type TEXT NOT NULL,
+                    source_record_id TEXT,
+                    user_id TEXT NOT NULL,
+                    device_id TEXT,
+                    timezone TEXT DEFAULT 'UTC',
+                    collected_at TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    timestamp TIMESTAMP NOT NULL,
+                    stress_score INTEGER NOT NULL,
+                    level TEXT NOT NULL,
+                    min_stress INTEGER,
+                    max_stress INTEGER
+                )
+            """)
+
             # Sync state table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS sync_state (
@@ -200,6 +248,14 @@ class Database:
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_heart_rate_user_ts
                 ON heart_rate_samples(user_id, timestamp)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_readiness_user_ts
+                ON readiness_samples(user_id, timestamp)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_stress_user_ts
+                ON stress_samples(user_id, timestamp)
             """)
 
             conn.commit()
@@ -421,6 +477,89 @@ class Database:
             conn.commit()
             return cursor.rowcount > 0
 
+    def insert_readiness_sample(self, sample: ReadinessSample) -> bool:
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO readiness_samples (
+                    id, provider, source_type, source_record_id, user_id, device_id,
+                    timezone, collected_at, timestamp, readiness_score, physical_score,
+                    mental_score, rhr_score, ahi_score, afib_score, skin_temp_score,
+                    sleep_hrv, hrv_score, hrv_baseline
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    readiness_score = excluded.readiness_score,
+                    physical_score = excluded.physical_score,
+                    mental_score = excluded.mental_score,
+                    rhr_score = excluded.rhr_score,
+                    ahi_score = excluded.ahi_score,
+                    afib_score = excluded.afib_score,
+                    skin_temp_score = excluded.skin_temp_score,
+                    sleep_hrv = excluded.sleep_hrv,
+                    hrv_score = excluded.hrv_score,
+                    hrv_baseline = excluded.hrv_baseline,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    sample.id,
+                    sample.provider,
+                    sample.source_type,
+                    sample.source_record_id,
+                    sample.user_id,
+                    sample.device_id,
+                    sample.timezone,
+                    sample.collected_at.isoformat() if sample.collected_at else None,
+                    sample.timestamp.isoformat(),
+                    sample.readiness_score,
+                    sample.physical_score,
+                    sample.mental_score,
+                    sample.rhr_score,
+                    sample.ahi_score,
+                    sample.afib_score,
+                    sample.skin_temp_score,
+                    sample.sleep_hrv,
+                    sample.hrv_score,
+                    sample.hrv_baseline,
+                ),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def insert_stress_sample(self, sample: StressSample) -> bool:
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO stress_samples (
+                    id, provider, source_type, source_record_id, user_id, device_id,
+                    timezone, collected_at, timestamp, stress_score, level,
+                    min_stress, max_stress
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    stress_score = excluded.stress_score,
+                    level = excluded.level,
+                    min_stress = excluded.min_stress,
+                    max_stress = excluded.max_stress,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    sample.id,
+                    sample.provider,
+                    sample.source_type,
+                    sample.source_record_id,
+                    sample.user_id,
+                    sample.device_id,
+                    sample.timezone,
+                    sample.collected_at.isoformat() if sample.collected_at else None,
+                    sample.timestamp.isoformat(),
+                    sample.stress_score,
+                    sample.level,
+                    sample.min_stress,
+                    sample.max_stress,
+                ),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
     def update_sync_state(self, data_type: str, last_record_ts: datetime | None = None) -> None:
         """Update sync state for a data type."""
         with self._get_connection() as conn:
@@ -441,6 +580,8 @@ class Database:
         "sleep": ("sleep_sessions", "date(start_at)"),
         "heart_rate": ("heart_rate_samples", "date(timestamp)"),
         "body_measurements": ("body_measurements", "date(timestamp)"),
+        "readiness": ("readiness_samples", "date(timestamp)"),
+        "stress": ("stress_samples", "date(timestamp)"),
     }
 
     def get_last_updated(
@@ -573,6 +714,42 @@ class Database:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    def query_readiness_samples(
+        self,
+        user_id: str,
+        start_date: str,
+        end_date: str,
+    ) -> list[dict[str, Any]]:
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM readiness_samples
+                WHERE user_id = ?
+                AND date(timestamp) >= ? AND date(timestamp) <= ?
+                ORDER BY timestamp
+                """,
+                (user_id, start_date, end_date),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def query_stress_samples(
+        self,
+        user_id: str,
+        start_date: str,
+        end_date: str,
+    ) -> list[dict[str, Any]]:
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM stress_samples
+                WHERE user_id = ?
+                AND date(timestamp) >= ? AND date(timestamp) <= ?
+                ORDER BY timestamp
+                """,
+                (user_id, start_date, end_date),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     def get_data_coverage(self, user_id: str) -> list[dict[str, Any]]:
         """Get data coverage statistics."""
         with self._get_connection() as conn:
@@ -673,6 +850,44 @@ class Database:
                 results.append(
                     {
                         "data_type": "heart_rate",
+                        **dict(row),
+                    }
+                )
+
+            row = conn.execute(
+                """
+                SELECT
+                    MIN(date(timestamp)) as first_date,
+                    MAX(date(timestamp)) as last_date,
+                    COUNT(DISTINCT date(timestamp)) as days_with_data
+                FROM readiness_samples
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+            if row and row["first_date"]:
+                results.append(
+                    {
+                        "data_type": "readiness",
+                        **dict(row),
+                    }
+                )
+
+            row = conn.execute(
+                """
+                SELECT
+                    MIN(date(timestamp)) as first_date,
+                    MAX(date(timestamp)) as last_date,
+                    COUNT(DISTINCT date(timestamp)) as days_with_data
+                FROM stress_samples
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+            if row and row["first_date"]:
+                results.append(
+                    {
+                        "data_type": "stress",
                         **dict(row),
                     }
                 )

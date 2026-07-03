@@ -14,12 +14,26 @@ from zepp_life_mcp.models import (
     BodyMeasurement,
     DailyActivity,
     HeartRateSample,
+    ReadinessSample,
     SleepSession,
     SleepStage,
+    StressSample,
     Workout,
 )
 
 logger = logging.getLogger(__name__)
+
+# Basal metabolism estimate observed in the Zepp app for this specific user/profile
+# (not a generic formula). The cloud API exposes no basal/total calorie field, only
+# active calories. Recalculate manually if body weight changes significantly.
+BMR_CONSTANT_KCAL = 2022
+
+
+def _score_or_none(value: Any) -> int | None:
+    """Zepp uses 255 as a sentinel for 'not computed' on 0-100 readiness score fields."""
+    if value is None or value >= 255:
+        return None
+    return int(value)
 
 
 class CloudSessionAdapter(DataAdapter):
@@ -133,6 +147,56 @@ class CloudSessionAdapter(DataAdapter):
             logger.error(f"Failed to parse heart rate data: {e}")
             return []
 
+    async def _iter_events(
+        self,
+        event_type: str,
+        sub_type: str,
+        start_ts_ms: int,
+        end_ts_ms: int,
+    ) -> AsyncIterator[dict]:
+        """Iterate raw event items for an eventType/subType within a timestamp range.
+
+        Without pagination this API only returns the account's oldest 20 events, so
+        this jumps straight to start_ts_ms via the `next` cursor and pages forward
+        until the window is covered, instead of crawling from the beginning.
+        """
+        if not self._client:
+            return
+            yield
+
+        cursor = start_ts_ms
+        seen_cursors: set[int] = set()
+
+        while True:
+            try:
+                response = await self._client.get(
+                    f"{self.ZEPP_WEIGHT_API}/v2/users/me/events",
+                    params={"eventType": event_type, "subType": sub_type, "next": cursor},
+                )
+            except Exception as e:
+                logger.error(f"Error fetching {event_type} events: {e}")
+                return
+
+            if response.status_code != 200:
+                logger.error(f"Failed to fetch {event_type} events: {response.status_code}")
+                return
+
+            body = response.json()
+            items = body.get("items", [])
+
+            for item in items:
+                ts = item.get("timestamp", 0)
+                if start_ts_ms <= ts <= end_ts_ms:
+                    yield item
+
+            next_cursor = body.get("next")
+            reached_end = bool(items) and items[-1].get("timestamp", 0) >= end_ts_ms
+            if not items or not next_cursor or next_cursor in seen_cursors or reached_end:
+                return
+
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
+
     async def _get_user_info(self) -> dict | None:
         if not self._client:
             return None
@@ -212,6 +276,26 @@ class CloudSessionAdapter(DataAdapter):
         except Exception:
             pass
 
+        try:
+            response = await self._client.get(
+                f"{self.ZEPP_WEIGHT_API}/v2/users/me/events",
+                params={"eventType": "readiness", "subType": "watch_score"},
+            )
+            if response.status_code == 200 and response.json().get("items"):
+                types.append("readiness")
+        except Exception:
+            pass
+
+        try:
+            response = await self._client.get(
+                f"{self.ZEPP_WEIGHT_API}/v2/users/me/events",
+                params={"eventType": "all_day_stress", "subType": "all_day_stress"},
+            )
+            if response.status_code == 200 and response.json().get("items"):
+                types.append("stress")
+        except Exception:
+            pass
+
         return list(set(types))
 
     async def iter_daily_activity(
@@ -251,6 +335,7 @@ class CloudSessionAdapter(DataAdapter):
             for date_str, day_data in self._iter_band_summary_entries(parsed_data):
                 steps_data = day_data.get("stp", {})
                 if steps_data:
+                    active_kcal = steps_data.get("cal", 0)
                     yield DailyActivity(
                         id=f"cloud_{date_str}",
                         provider="zepp_life",
@@ -259,7 +344,8 @@ class CloudSessionAdapter(DataAdapter):
                         date=date_str,
                         steps=steps_data.get("ttl", 0),
                         distance_m=steps_data.get("dis", 0),
-                        active_kcal=steps_data.get("cal", 0),
+                        active_kcal=active_kcal,
+                        total_kcal=active_kcal + BMR_CONSTANT_KCAL,
                     )
 
         except Exception as e:
@@ -357,6 +443,7 @@ class CloudSessionAdapter(DataAdapter):
                     duration_minutes=total_duration,
                     time_asleep_minutes=asleep_minutes,
                     time_awake_minutes=awake_minutes,
+                    sleep_score=sleep_data.get("ss"),
                     rem_minutes=rem_minutes,
                     wake_count=wake_count,
                     stages=stages,
@@ -481,6 +568,113 @@ class CloudSessionAdapter(DataAdapter):
 
         except Exception as e:
             logger.error(f"Error fetching resting heart rate: {e}")
+
+    async def iter_readiness(
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> AsyncIterator[ReadinessSample]:
+        """Iterate over daily readiness/recovery scores."""
+        if not self._client or not self.is_connected():
+            return
+            yield
+
+        if not end_date:
+            end_date = datetime.now().strftime("%Y-%m-%d")
+        if not start_date:
+            start_dt = datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=30)
+            start_date = start_dt.strftime("%Y-%m-%d")
+
+        start_ts_ms = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp() * 1000)
+        end_ts_ms = (
+            int((datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).timestamp() * 1000)
+            - 1
+        )
+
+        async for item in self._iter_events("readiness", "watch_score", start_ts_ms, end_ts_ms):
+            value = item.get("value", {})
+            ts = item.get("timestamp", 0)
+            if not ts:
+                continue
+            timestamp = datetime.fromtimestamp(ts / 1000)
+            date_str = timestamp.strftime("%Y-%m-%d")
+
+            yield ReadinessSample(
+                id=f"cloud_readiness_{date_str}",
+                provider="zepp_life",
+                source_type="cloud_session",
+                user_id=self.user_id or "unknown",
+                timestamp=timestamp,
+                readiness_score=_score_or_none(value.get("rdnsScore")),
+                physical_score=_score_or_none(value.get("phyScore")),
+                mental_score=_score_or_none(value.get("mentScore")),
+                rhr_score=_score_or_none(value.get("rhrScore")),
+                ahi_score=_score_or_none(value.get("ahiScore")),
+                afib_score=_score_or_none(value.get("afibScore")),
+                skin_temp_score=_score_or_none(value.get("skinTempScore")),
+                sleep_hrv=value.get("sleepHRV"),
+                hrv_score=_score_or_none(value.get("hrvScore")),
+                hrv_baseline=value.get("hrvBaseline"),
+            )
+
+    async def iter_stress(
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> AsyncIterator[StressSample]:
+        """Iterate over daily stress score aggregates."""
+        if not self._client or not self.is_connected():
+            return
+            yield
+
+        if not end_date:
+            end_date = datetime.now().strftime("%Y-%m-%d")
+        if not start_date:
+            start_dt = datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=30)
+            start_date = start_dt.strftime("%Y-%m-%d")
+
+        start_ts_ms = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp() * 1000)
+        end_ts_ms = (
+            int((datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).timestamp() * 1000)
+            - 1
+        )
+
+        async for item in self._iter_events(
+            "all_day_stress", "all_day_stress", start_ts_ms, end_ts_ms
+        ):
+            value = item.get("value", {})
+            avg_stress = value.get("avgStress")
+            if avg_stress is None:
+                continue
+            avg_stress = int(avg_stress)
+
+            ts = item.get("timestamp", 0)
+            if not ts:
+                continue
+            timestamp = datetime.fromtimestamp(ts / 1000)
+            date_str = timestamp.strftime("%Y-%m-%d")
+
+            if avg_stress < 30:
+                level = "low"
+            elif avg_stress < 60:
+                level = "medium"
+            else:
+                level = "high"
+
+            min_stress = value.get("minStress")
+            max_stress = value.get("maxStress")
+
+            yield StressSample(
+                id=f"cloud_stress_{date_str}",
+                provider="zepp_life",
+                source_type="cloud_session",
+                user_id=self.user_id or "unknown",
+                timestamp=timestamp,
+                stress_score=avg_stress,
+                level=level,
+                min_stress=int(min_stress) if min_stress is not None else None,
+                max_stress=int(max_stress) if max_stress is not None else None,
+            )
 
     async def iter_workouts(
         self,
