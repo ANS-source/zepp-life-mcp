@@ -588,14 +588,19 @@ class Database:
         "stress": ("stress_samples", "date(timestamp)"),
     }
 
-    def get_last_updated(
+    def get_oldest_updated(
         self,
         data_type: str,
         user_id: str,
         start_date: str,
         end_date: str,
     ) -> datetime | None:
-        """Get the most recent updated_at among cached records of a data type in a date range.
+        """Get the least recent updated_at among cached records of a data type in a date range.
+
+        Used to confirm every record in an already fully-covered range is still
+        fresh, not just the single most recently touched one - MAX(updated_at)
+        alone lets one freshly-synced record mask other records in the same range
+        that are older than the staleness threshold.
 
         Returns None if the data type is unknown or no records exist in the range.
         """
@@ -607,13 +612,13 @@ class Database:
         with self._get_connection() as conn:
             row = conn.execute(
                 f"""
-                SELECT MAX(updated_at) as last_updated FROM {table_name}
+                SELECT MIN(updated_at) as oldest_updated FROM {table_name}
                 WHERE user_id = ? AND {date_expr} >= ? AND {date_expr} <= ?
                 """,
                 (user_id, start_date, end_date),
             ).fetchone()
-            if row and row["last_updated"]:
-                return datetime.fromisoformat(row["last_updated"])
+            if row and row["oldest_updated"]:
+                return datetime.fromisoformat(row["oldest_updated"])
             return None
 
     def get_covered_days(

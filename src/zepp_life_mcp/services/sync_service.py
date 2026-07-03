@@ -209,15 +209,26 @@ class SyncService:
 
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
         end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+        if start_dt > end_dt:
+            logger.warning(
+                f"ensure_fresh got a reversed range for {data_type} "
+                f"(start_date={start_date} after end_date={end_date}); swapping"
+            )
+            start_date, end_date = end_date, start_date
+            start_dt, end_dt = end_dt, start_dt
+
         expected_days = (end_dt - start_dt).days + 1
 
         covered_days = self.db.get_covered_days(data_type, user_id, start_date, end_date)
         if covered_days < expected_days:
             return await self.sync_data_type(data_type, start_date, end_date, force_full=True)
 
-        last_updated = self.db.get_last_updated(data_type, user_id, start_date, end_date)
-        if last_updated:
-            age_minutes = (datetime.utcnow() - last_updated).total_seconds() / 60
+        # Check the OLDEST touched record in the range, not just the newest one -
+        # a single freshly-synced day can otherwise mask older, genuinely stale
+        # days elsewhere in an already fully-covered range.
+        oldest_updated = self.db.get_oldest_updated(data_type, user_id, start_date, end_date)
+        if oldest_updated:
+            age_minutes = (datetime.utcnow() - oldest_updated).total_seconds() / 60
             if age_minutes < stale_after_minutes:
                 return None
 
