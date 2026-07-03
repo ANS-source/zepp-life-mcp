@@ -52,6 +52,8 @@ class SleepSession(BaseEntity):
     sleep_score: int | None = Field(None, ge=0, le=100, description="Sleep quality score")
     is_nap: bool = Field(default=False, description="Whether this is a nap")
     stages: list[SleepStage] = Field(default_factory=list, description="Sleep stages breakdown")
+    rem_minutes: int | None = Field(None, ge=0, description="REM sleep duration in minutes")
+    wake_count: int | None = Field(None, ge=0, description="Number of awake segments during sleep")
 
 
 class Workout(BaseEntity):

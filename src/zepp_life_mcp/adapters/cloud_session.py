@@ -319,18 +319,28 @@ class CloudSessionAdapter(DataAdapter):
 
                 stages = []
                 stage_data = sleep_data.get("stage", [])
+                rem_minutes = 0
+                awake_minutes = 0
+                wake_count = 0
                 for stage in stage_data:
                     mode = stage.get("mode")
                     if mode == 5:
                         stage_type = "deep"
                     elif mode == 4:
                         stage_type = "light"
-                    elif mode == 3:
+                    elif mode == 8:
                         stage_type = "rem"
                     else:
                         stage_type = "awake"
                     stage_stop = stage.get("stop", stage.get("end", 0))
                     stage_duration = max(0, stage_stop - stage.get("start", 0))
+
+                    if stage_type == "rem":
+                        rem_minutes += stage_duration
+                    elif stage_type == "awake":
+                        wake_count += 1
+                        awake_minutes += stage_duration
+
                     if stage_duration:
                         stages.append(SleepStage(stage=stage_type, minutes=stage_duration))
 
@@ -345,7 +355,9 @@ class CloudSessionAdapter(DataAdapter):
                     end_at=end_dt,
                     duration_minutes=total_duration,
                     time_asleep_minutes=asleep_minutes,
-                    time_awake_minutes=max(0, total_duration - asleep_minutes),
+                    time_awake_minutes=awake_minutes,
+                    rem_minutes=rem_minutes,
+                    wake_count=wake_count,
                     stages=stages,
                 )
 

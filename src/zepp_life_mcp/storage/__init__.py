@@ -79,9 +79,20 @@ class Database:
                     sleep_score INTEGER,
                     is_nap BOOLEAN DEFAULT FALSE,
                     stages TEXT,  -- JSON array of sleep stages
+                    rem_minutes INTEGER,
+                    wake_count INTEGER,
                     UNIQUE(user_id, sleep_id)
                 )
             """)
+
+            # Migrate existing databases created before rem_minutes/wake_count existed
+            existing_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(sleep_sessions)")
+            }
+            if "rem_minutes" not in existing_columns:
+                conn.execute("ALTER TABLE sleep_sessions ADD COLUMN rem_minutes INTEGER")
+            if "wake_count" not in existing_columns:
+                conn.execute("ALTER TABLE sleep_sessions ADD COLUMN wake_count INTEGER")
 
             # Workouts table
             conn.execute("""
@@ -256,14 +267,17 @@ class Database:
                 INSERT INTO sleep_sessions (
                     id, provider, source_type, source_record_id, user_id, device_id,
                     timezone, collected_at, sleep_id, start_at, end_at, duration_minutes,
-                    time_asleep_minutes, time_awake_minutes, sleep_score, is_nap, stages
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    time_asleep_minutes, time_awake_minutes, sleep_score, is_nap, stages,
+                    rem_minutes, wake_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(user_id, sleep_id) DO UPDATE SET
                     duration_minutes = excluded.duration_minutes,
                     time_asleep_minutes = excluded.time_asleep_minutes,
                     time_awake_minutes = excluded.time_awake_minutes,
                     sleep_score = excluded.sleep_score,
                     stages = excluded.stages,
+                    rem_minutes = excluded.rem_minutes,
+                    wake_count = excluded.wake_count,
                     updated_at = CURRENT_TIMESTAMP
                 """,
                 (
@@ -284,6 +298,8 @@ class Database:
                     sleep.sleep_score,
                     sleep.is_nap,
                     json.dumps([s.model_dump() for s in sleep.stages]),
+                    sleep.rem_minutes,
+                    sleep.wake_count,
                 ),
             )
             conn.commit()

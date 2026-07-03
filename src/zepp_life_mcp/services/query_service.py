@@ -173,6 +173,8 @@ class QueryService:
                 "time_awake_minutes": record["time_awake_minutes"],
                 "sleep_score": record.get("sleep_score"),
                 "is_nap": record.get("is_nap", False),
+                "rem_minutes": record.get("rem_minutes"),
+                "wake_count": record.get("wake_count"),
             }
 
             # Parse stages if available
