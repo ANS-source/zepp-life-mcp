@@ -228,7 +228,7 @@ class Database:
                     timezone, collected_at, date, steps, distance_m, active_kcal,
                     total_kcal, floors, active_minutes
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(user_id, date, device_id) DO UPDATE SET
+                ON CONFLICT(id) DO UPDATE SET
                     steps = excluded.steps,
                     distance_m = excluded.distance_m,
                     active_kcal = excluded.active_kcal,
@@ -236,7 +236,6 @@ class Database:
                     floors = excluded.floors,
                     active_minutes = excluded.active_minutes,
                     updated_at = CURRENT_TIMESTAMP
-                WHERE excluded.steps > daily_activity.steps
                 """,
                 (
                     activity.id,
@@ -361,7 +360,7 @@ class Database:
                     muscle_mass_kg, water_pct, bone_mass_kg, visceral_fat_score,
                     basal_metabolism_kcal, metabolic_age
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(user_id, timestamp, device_id) DO UPDATE SET
+                ON CONFLICT(id) DO UPDATE SET
                     weight_kg = excluded.weight_kg,
                     bmi = excluded.bmi,
                     body_fat_pct = excluded.body_fat_pct,
@@ -436,6 +435,41 @@ class Database:
                 (data_type, last_record_ts.isoformat() if last_record_ts else None),
             )
             conn.commit()
+
+    _FRESHNESS_TABLES = {
+        "daily_activity": ("daily_activity", "date"),
+        "sleep": ("sleep_sessions", "date(start_at)"),
+        "heart_rate": ("heart_rate_samples", "date(timestamp)"),
+        "body_measurements": ("body_measurements", "date(timestamp)"),
+    }
+
+    def get_last_updated(
+        self,
+        data_type: str,
+        user_id: str,
+        start_date: str,
+        end_date: str,
+    ) -> datetime | None:
+        """Get the most recent updated_at among cached records of a data type in a date range.
+
+        Returns None if the data type is unknown or no records exist in the range.
+        """
+        table = self._FRESHNESS_TABLES.get(data_type)
+        if not table:
+            return None
+        table_name, date_expr = table
+
+        with self._get_connection() as conn:
+            row = conn.execute(
+                f"""
+                SELECT MAX(updated_at) as last_updated FROM {table_name}
+                WHERE user_id = ? AND {date_expr} >= ? AND {date_expr} <= ?
+                """,
+                (user_id, start_date, end_date),
+            ).fetchone()
+            if row and row["last_updated"]:
+                return datetime.fromisoformat(row["last_updated"])
+            return None
 
     def get_sync_state(self, data_type: str) -> dict[str, Any] | None:
         """Get sync state for a data type."""

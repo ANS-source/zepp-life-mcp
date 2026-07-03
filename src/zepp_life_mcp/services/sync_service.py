@@ -160,6 +160,29 @@ class SyncService:
             "end_date": end_date,
         }
 
+    async def ensure_fresh(
+        self,
+        data_type: str,
+        start_date: str,
+        end_date: str,
+        stale_after_minutes: int,
+    ) -> dict | None:
+        """Sync a data type/date range if the cache is missing or older than the threshold.
+
+        Returns sync stats if a sync was triggered, None if the cache was already fresh.
+        """
+        if not self.adapter.is_connected():
+            return None
+
+        user_id = self.adapter.get_user_id() or "unknown"
+        last_updated = self.db.get_last_updated(data_type, user_id, start_date, end_date)
+        if last_updated:
+            age_minutes = (datetime.utcnow() - last_updated).total_seconds() / 60
+            if age_minutes < stale_after_minutes:
+                return None
+
+        return await self.sync_data_type(data_type, start_date, end_date, force_full=True)
+
     def sync_data_type_sync(
         self,
         data_type: str,

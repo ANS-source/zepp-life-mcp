@@ -107,6 +107,10 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "Timezone (default from config)",
                     },
+                    "force_refresh": {
+                        "type": "boolean",
+                        "description": "Auto-sync stale/missing data for the requested range before answering (default true)",
+                    },
                 },
             },
         ),
@@ -171,6 +175,10 @@ async def list_tools() -> list[Tool]:
                         "type": "boolean",
                         "description": "Include sleep stage breakdown",
                     },
+                    "force_refresh": {
+                        "type": "boolean",
+                        "description": "Auto-sync stale/missing data for the requested range before answering (default true)",
+                    },
                 },
                 "required": ["start_date", "end_date"],
             },
@@ -229,6 +237,10 @@ async def list_tools() -> list[Tool]:
                         "type": "integer",
                         "description": "Maximum number of samples to return",
                     },
+                    "force_refresh": {
+                        "type": "boolean",
+                        "description": "Auto-sync stale/missing data for the requested range before answering (default true)",
+                    },
                 },
                 "required": ["start_date", "end_date"],
             },
@@ -264,6 +276,10 @@ async def list_tools() -> list[Tool]:
                     "latest_only": {
                         "type": "boolean",
                         "description": "Return only the latest measurement",
+                    },
+                    "force_refresh": {
+                        "type": "boolean",
+                        "description": "Auto-sync stale/missing data for the requested range before answering (default true)",
                     },
                 },
                 "required": ["start_date", "end_date"],
@@ -474,6 +490,26 @@ async def _handle_get_profile(arguments: dict) -> dict:
     ).model_dump()
 
 
+async def _maybe_refresh(data_type: str, start_date: str, end_date: str, force_refresh: bool) -> None:
+    """Auto-sync a data type/date range before serving cached data, if enabled and stale."""
+    global sync_service, config
+
+    if not force_refresh or not sync_service:
+        return
+
+    try:
+        result = await sync_service.ensure_fresh(
+            data_type, start_date, end_date, config.stale_after_minutes if config else 60
+        )
+        if result:
+            logger.info(
+                f"Auto-refreshed {data_type} ({start_date} to {end_date}): "
+                f"{result['added']} added, {result['updated']} updated"
+            )
+    except Exception as e:
+        logger.warning(f"Auto-refresh failed for {data_type} ({start_date} to {end_date}): {e}")
+
+
 async def _handle_get_daily_summary(arguments: dict) -> dict:
     """Handle get_daily_summary tool."""
     global query_service, config
@@ -497,6 +533,8 @@ async def _handle_get_daily_summary(arguments: dict) -> dict:
             "status": "error",
             "error": "Either 'date' or 'start_date' and 'end_date' required",
         }
+
+    await _maybe_refresh("daily_activity", start_date, end_date, arguments.get("force_refresh", True))
 
     try:
         summaries = query_service.get_daily_summaries(start_date, end_date)
@@ -568,6 +606,8 @@ async def _handle_query_sleep(arguments: dict) -> dict:
     end_date = arguments["end_date"]
     include_naps = arguments.get("include_naps", True)
     include_stages = arguments.get("include_stages", True)
+
+    await _maybe_refresh("sleep", start_date, end_date, arguments.get("force_refresh", True))
 
     try:
         sessions = query_service.get_sleep_sessions(
@@ -659,6 +699,8 @@ async def _handle_query_heart_rate(arguments: dict) -> dict:
     sample_type = arguments.get("sample_type")
     limit = arguments.get("limit")
 
+    await _maybe_refresh("heart_rate", start_date, end_date, arguments.get("force_refresh", True))
+
     try:
         samples = query_service.get_heart_rate_samples(
             start_date=start_date,
@@ -695,6 +737,8 @@ async def _handle_query_body_measurements(arguments: dict) -> dict:
     end_date = arguments["end_date"]
     metrics = arguments.get("metrics")
     latest_only = arguments.get("latest_only", False)
+
+    await _maybe_refresh("body_measurements", start_date, end_date, arguments.get("force_refresh", True))
 
     try:
         measurements = query_service.get_body_measurements(

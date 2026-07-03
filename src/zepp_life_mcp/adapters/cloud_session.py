@@ -333,7 +333,8 @@ class CloudSessionAdapter(DataAdapter):
                     else:
                         stage_type = "awake"
                     stage_stop = stage.get("stop", stage.get("end", 0))
-                    stage_duration = max(0, stage_stop - stage.get("start", 0))
+                    stage_start = stage.get("start", 0)
+                    stage_duration = max(0, stage_stop - stage_start + 1) if stage_stop >= stage_start else 0
 
                     if stage_type == "rem":
                         rem_minutes += stage_duration
