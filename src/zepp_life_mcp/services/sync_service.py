@@ -214,6 +214,17 @@ class SyncService:
 
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
         end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+        if start_dt > end_dt:
+            # Defensive: callers are expected to normalize the range before
+            # calling ensure_fresh (see docstring above). Raise loudly instead
+            # of silently treating a reversed range as "fully covered" - a
+            # future caller that skips normalization should fail fast, not
+            # produce a silently empty result.
+            raise ValueError(
+                f"ensure_fresh got a reversed range for {data_type} "
+                f"(start_date={start_date} after end_date={end_date}); "
+                "the caller must normalize the range first"
+            )
         expected_days = (end_dt - start_dt).days + 1
 
         covered_days = self.db.get_covered_days(data_type, user_id, start_date, end_date)

@@ -642,6 +642,8 @@ async def _handle_query_metric_series(arguments: dict) -> dict:
     granularity = arguments.get("granularity", "day")
     aggregation = arguments.get("aggregation", "sum")
 
+    start_date, end_date = _normalize_date_range(start_date, end_date)
+
     try:
         series = query_service.get_metric_series(
             metric=metric,
@@ -727,6 +729,8 @@ async def _handle_query_workouts(arguments: dict) -> dict:
     activity_types = arguments.get("activity_types")
     min_duration = arguments.get("min_duration_minutes")
     min_distance_km = arguments.get("min_distance_km")
+
+    start_date, end_date = _normalize_date_range(start_date, end_date)
 
     try:
         workouts = query_service.get_workouts(
