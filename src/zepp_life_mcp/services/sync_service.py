@@ -12,6 +12,25 @@ from zepp_life_mcp.storage import Database
 logger = logging.getLogger(__name__)
 
 
+def normalize_date_range(start_date: str, end_date: str) -> tuple[str, str]:
+    """Swap start_date/end_date if reversed.
+
+    Single shared implementation - used both by sync_data_type() (so a range
+    that only becomes reversed after default-resolution, e.g. a future-dated
+    start_date with no end_date, still gets corrected) and by the MCP query_*
+    handlers in server.py (so the sync and the subsequent DB query agree on
+    the same corrected range).
+    """
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    if start_dt > end_dt:
+        logger.warning(
+            f"Reversed date range (start_date={start_date} after end_date={end_date}); swapping"
+        )
+        return end_date, start_date
+    return start_date, end_date
+
+
 class SyncService:
     """Service for synchronizing data from adapters to local database."""
 
@@ -72,6 +91,12 @@ class SyncService:
             else:
                 start = datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=30)
                 start_date = start.strftime("%Y-%m-%d")
+
+        # Defaults are resolved independently (end_date defaults to today,
+        # start_date defaults separately based on sync state/adapter type), so
+        # they can end up reversed even when the caller only supplied one of
+        # the two dates (e.g. a future-dated start_date with no end_date).
+        start_date, end_date = normalize_date_range(start_date, end_date)
 
         added = 0
         updated = 0

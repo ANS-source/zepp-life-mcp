@@ -16,7 +16,7 @@ from zepp_life_mcp.auth import load_token
 from zepp_life_mcp.config import load_config
 from zepp_life_mcp.models import ConnectionStatus, QueryResponse
 from zepp_life_mcp.services.query_service import QueryService
-from zepp_life_mcp.services.sync_service import SyncService
+from zepp_life_mcp.services.sync_service import SyncService, normalize_date_range
 from zepp_life_mcp.storage import Database
 
 # Setup logging
@@ -479,8 +479,11 @@ async def _handle_sync_data(arguments: dict) -> dict:
     end_date = arguments.get("end_date")
     force_full = arguments.get("force_full_sync", False)
 
-    if start_date and end_date:
-        start_date, end_date = _normalize_date_range(start_date, end_date)
+    # No normalization here: sync_data_type() resolves start_date/end_date
+    # defaults independently (a future-dated start_date with no end_date can
+    # only become reversed after that resolution) and normalizes the result
+    # itself, so doing it again here on the possibly-partial input would miss
+    # that case.
 
     sync_id = str(uuid.uuid4())
     started_at = datetime.utcnow()
@@ -549,23 +552,6 @@ async def _handle_get_profile(arguments: dict) -> dict:
     ).model_dump()
 
 
-def _normalize_date_range(start_date: str, end_date: str) -> tuple[str, str]:
-    """Swap start_date/end_date if reversed, so the sync and the query see the same range.
-
-    This is the single point where a reversed range gets corrected - callers must
-    normalize once here before using the dates for anything else, rather than each
-    layer (sync freshness check, DB query) re-deriving its own corrected range.
-    """
-    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-    if start_dt > end_dt:
-        logger.warning(
-            f"Reversed date range (start_date={start_date} after end_date={end_date}); swapping"
-        )
-        return end_date, start_date
-    return start_date, end_date
-
-
 async def _maybe_refresh(data_type: str, start_date: str, end_date: str, force_refresh: bool) -> None:
     """Auto-sync a data type/date range before serving cached data, if enabled and stale."""
     global sync_service, config
@@ -610,7 +596,7 @@ async def _handle_get_daily_summary(arguments: dict) -> dict:
             "error": "Either 'date' or 'start_date' and 'end_date' required",
         }
 
-    start_date, end_date = _normalize_date_range(start_date, end_date)
+    start_date, end_date = normalize_date_range(start_date, end_date)
 
     await _maybe_refresh("daily_activity", start_date, end_date, arguments.get("force_refresh", True))
 
@@ -645,7 +631,7 @@ async def _handle_query_metric_series(arguments: dict) -> dict:
     granularity = arguments.get("granularity", "day")
     aggregation = arguments.get("aggregation", "sum")
 
-    start_date, end_date = _normalize_date_range(start_date, end_date)
+    start_date, end_date = normalize_date_range(start_date, end_date)
 
     try:
         series = query_service.get_metric_series(
@@ -687,7 +673,7 @@ async def _handle_query_sleep(arguments: dict) -> dict:
     include_naps = arguments.get("include_naps", True)
     include_stages = arguments.get("include_stages", True)
 
-    start_date, end_date = _normalize_date_range(start_date, end_date)
+    start_date, end_date = normalize_date_range(start_date, end_date)
 
     await _maybe_refresh("sleep", start_date, end_date, arguments.get("force_refresh", True))
 
@@ -733,7 +719,7 @@ async def _handle_query_workouts(arguments: dict) -> dict:
     min_duration = arguments.get("min_duration_minutes")
     min_distance_km = arguments.get("min_distance_km")
 
-    start_date, end_date = _normalize_date_range(start_date, end_date)
+    start_date, end_date = normalize_date_range(start_date, end_date)
 
     try:
         workouts = query_service.get_workouts(
@@ -783,7 +769,7 @@ async def _handle_query_heart_rate(arguments: dict) -> dict:
     sample_type = arguments.get("sample_type")
     limit = arguments.get("limit")
 
-    start_date, end_date = _normalize_date_range(start_date, end_date)
+    start_date, end_date = normalize_date_range(start_date, end_date)
 
     await _maybe_refresh("heart_rate", start_date, end_date, arguments.get("force_refresh", True))
 
@@ -824,7 +810,7 @@ async def _handle_query_body_measurements(arguments: dict) -> dict:
     metrics = arguments.get("metrics")
     latest_only = arguments.get("latest_only", False)
 
-    start_date, end_date = _normalize_date_range(start_date, end_date)
+    start_date, end_date = normalize_date_range(start_date, end_date)
 
     await _maybe_refresh("body_measurements", start_date, end_date, arguments.get("force_refresh", True))
 
@@ -866,7 +852,7 @@ async def _handle_query_readiness(arguments: dict) -> dict:
     start_date = arguments["start_date"]
     end_date = arguments["end_date"]
 
-    start_date, end_date = _normalize_date_range(start_date, end_date)
+    start_date, end_date = normalize_date_range(start_date, end_date)
 
     await _maybe_refresh("readiness", start_date, end_date, arguments.get("force_refresh", True))
 
@@ -900,7 +886,7 @@ async def _handle_query_stress(arguments: dict) -> dict:
     start_date = arguments["start_date"]
     end_date = arguments["end_date"]
 
-    start_date, end_date = _normalize_date_range(start_date, end_date)
+    start_date, end_date = normalize_date_range(start_date, end_date)
 
     await _maybe_refresh("stress", start_date, end_date, arguments.get("force_refresh", True))
 
