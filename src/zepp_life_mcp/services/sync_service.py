@@ -191,20 +191,31 @@ class SyncService:
         end_date: str,
         stale_after_minutes: int,
     ) -> dict | None:
-        """Sync a data type/date range if the cache is missing or older than the threshold.
+        """Sync a data type/date range if the cache doesn't fully cover it or is stale.
 
-        Freshness is checked against end_date specifically, not "does any record
-        exist somewhere in the range" - a range can have one recent record on its
-        first day and be completely empty for the rest of it and still look fresh
-        under a range-wide check.
+        Coverage is checked by counting distinct calendar days with at least one
+        record against the number of days actually spanned by the range - checking
+        only that some record exists in the range, or only that end_date is covered,
+        both miss a gap in the middle of the range (e.g. start_date and end_date
+        populated but a day in between missing).
 
-        Returns sync stats if a sync was triggered, None if the cache was already fresh.
+        Returns sync stats if a sync was triggered, None if the cache was already
+        fresh and fully covers the range.
         """
         if not self.adapter.is_connected():
             return None
 
         user_id = self.adapter.get_user_id() or "unknown"
-        last_updated = self.db.get_last_updated(data_type, user_id, end_date, end_date)
+
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+        expected_days = (end_dt - start_dt).days + 1
+
+        covered_days = self.db.get_covered_days(data_type, user_id, start_date, end_date)
+        if covered_days < expected_days:
+            return await self.sync_data_type(data_type, start_date, end_date, force_full=True)
+
+        last_updated = self.db.get_last_updated(data_type, user_id, start_date, end_date)
         if last_updated:
             age_minutes = (datetime.utcnow() - last_updated).total_seconds() / 60
             if age_minutes < stale_after_minutes:

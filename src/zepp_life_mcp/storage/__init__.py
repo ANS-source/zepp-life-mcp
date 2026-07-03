@@ -616,6 +616,32 @@ class Database:
                 return datetime.fromisoformat(row["last_updated"])
             return None
 
+    def get_covered_days(
+        self,
+        data_type: str,
+        user_id: str,
+        start_date: str,
+        end_date: str,
+    ) -> int:
+        """Count distinct calendar days with at least one cached record in a date range.
+
+        Returns 0 if the data type is unknown.
+        """
+        table = self._FRESHNESS_TABLES.get(data_type)
+        if not table:
+            return 0
+        table_name, date_expr = table
+
+        with self._get_connection() as conn:
+            row = conn.execute(
+                f"""
+                SELECT COUNT(DISTINCT {date_expr}) as covered_days FROM {table_name}
+                WHERE user_id = ? AND {date_expr} >= ? AND {date_expr} <= ?
+                """,
+                (user_id, start_date, end_date),
+            ).fetchone()
+            return row["covered_days"] if row else 0
+
     def get_sync_state(self, data_type: str) -> dict[str, Any] | None:
         """Get sync state for a data type."""
         with self._get_connection() as conn:
