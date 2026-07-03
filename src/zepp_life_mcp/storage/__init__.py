@@ -87,14 +87,18 @@ class Database:
                 )
             """)
 
-            # Migrate existing databases created before rem_minutes/wake_count existed
-            existing_columns = {
-                row["name"] for row in conn.execute("PRAGMA table_info(sleep_sessions)")
-            }
-            if "rem_minutes" not in existing_columns:
-                conn.execute("ALTER TABLE sleep_sessions ADD COLUMN rem_minutes INTEGER")
-            if "wake_count" not in existing_columns:
-                conn.execute("ALTER TABLE sleep_sessions ADD COLUMN wake_count INTEGER")
+            # Migrate existing databases created before rem_minutes/wake_count existed.
+            # SQLite has no "ADD COLUMN IF NOT EXISTS", and a separate existence check
+            # before the ALTER is not atomic across processes initializing the DB
+            # concurrently - both could see the column missing and one would then hit
+            # "duplicate column name". Just attempt the ALTER and treat that specific
+            # error as a no-op instead of pre-checking.
+            for column in ("rem_minutes", "wake_count"):
+                try:
+                    conn.execute(f"ALTER TABLE sleep_sessions ADD COLUMN {column} INTEGER")
+                except sqlite3.OperationalError as e:
+                    if "duplicate column name" not in str(e):
+                        raise
 
             # Workouts table
             conn.execute("""

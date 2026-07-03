@@ -30,10 +30,21 @@ BMR_CONSTANT_KCAL = 2022
 
 
 def _score_or_none(value: Any) -> int | None:
-    """Zepp uses 255 as a sentinel for 'not computed' on 0-100 readiness score fields."""
-    if value is None or value >= 255:
+    """Coerce a 0-100 score field to int, or None if missing/sentinel/out-of-range.
+
+    Zepp uses 255 (and other out-of-range values) as sentinels for "not computed"
+    on these fields, and the API sometimes returns them as strings rather than
+    numbers, so coerce first and only then check the valid range.
+    """
+    if value is None:
         return None
-    return int(value)
+    try:
+        score = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    if score < 0 or score > 100:
+        return None
+    return score
 
 
 class CloudSessionAdapter(DataAdapter):
@@ -236,8 +247,8 @@ class CloudSessionAdapter(DataAdapter):
                     if day_data.get("slp"):
                         types.append("sleep")
                     break
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to discover daily_activity/sleep availability: {e}")
 
         try:
             response = await self._client.get(
@@ -246,8 +257,8 @@ class CloudSessionAdapter(DataAdapter):
             )
             if response.status_code == 200:
                 types.append("workouts")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to discover workouts availability: {e}")
 
         try:
             response = await self._client.get(
@@ -265,16 +276,16 @@ class CloudSessionAdapter(DataAdapter):
                     if self._parse_heart_rate_data(item.get("data_hr", "")):
                         types.append("heart_rate")
                         break
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to discover heart_rate availability: {e}")
 
         try:
             url = f"{self.ZEPP_WEIGHT_API}/users/{self.user_id}/members/-1/weightRecords?limit=1"
             response = await self._client.get(url)
             if response.status_code == 200:
                 types.append("body_measurements")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to discover body_measurements availability: {e}")
 
         try:
             response = await self._client.get(
@@ -283,8 +294,8 @@ class CloudSessionAdapter(DataAdapter):
             )
             if response.status_code == 200 and response.json().get("items"):
                 types.append("readiness")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to discover readiness availability: {e}")
 
         try:
             response = await self._client.get(
@@ -293,8 +304,8 @@ class CloudSessionAdapter(DataAdapter):
             )
             if response.status_code == 200 and response.json().get("items"):
                 types.append("stress")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to discover stress availability: {e}")
 
         return list(set(types))
 
@@ -443,7 +454,7 @@ class CloudSessionAdapter(DataAdapter):
                     duration_minutes=total_duration,
                     time_asleep_minutes=asleep_minutes,
                     time_awake_minutes=awake_minutes,
-                    sleep_score=sleep_data.get("ss"),
+                    sleep_score=_score_or_none(sleep_data.get("ss")),
                     rem_minutes=rem_minutes,
                     wake_count=wake_count,
                     stages=stages,

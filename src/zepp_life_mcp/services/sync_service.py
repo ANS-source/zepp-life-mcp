@@ -193,13 +193,18 @@ class SyncService:
     ) -> dict | None:
         """Sync a data type/date range if the cache is missing or older than the threshold.
 
+        Freshness is checked against end_date specifically, not "does any record
+        exist somewhere in the range" - a range can have one recent record on its
+        first day and be completely empty for the rest of it and still look fresh
+        under a range-wide check.
+
         Returns sync stats if a sync was triggered, None if the cache was already fresh.
         """
         if not self.adapter.is_connected():
             return None
 
         user_id = self.adapter.get_user_id() or "unknown"
-        last_updated = self.db.get_last_updated(data_type, user_id, start_date, end_date)
+        last_updated = self.db.get_last_updated(data_type, user_id, end_date, end_date)
         if last_updated:
             age_minutes = (datetime.utcnow() - last_updated).total_seconds() / 60
             if age_minutes < stale_after_minutes:
