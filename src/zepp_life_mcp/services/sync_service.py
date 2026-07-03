@@ -199,6 +199,11 @@ class SyncService:
         both miss a gap in the middle of the range (e.g. start_date and end_date
         populated but a day in between missing).
 
+        Callers must pass an already-normalized range (start_date <= end_date) -
+        normalization happens once at the MCP handler level (_normalize_date_range
+        in server.py) so the sync and the subsequent DB query agree on the same
+        corrected range, instead of each layer swapping independently.
+
         Returns sync stats if a sync was triggered, None if the cache was already
         fresh and fully covers the range.
         """
@@ -209,14 +214,6 @@ class SyncService:
 
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
         end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-        if start_dt > end_dt:
-            logger.warning(
-                f"ensure_fresh got a reversed range for {data_type} "
-                f"(start_date={start_date} after end_date={end_date}); swapping"
-            )
-            start_date, end_date = end_date, start_date
-            start_dt, end_dt = end_dt, start_dt
-
         expected_days = (end_dt - start_dt).days + 1
 
         covered_days = self.db.get_covered_days(data_type, user_id, start_date, end_date)
