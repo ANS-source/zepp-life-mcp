@@ -479,6 +479,9 @@ async def _handle_sync_data(arguments: dict) -> dict:
     end_date = arguments.get("end_date")
     force_full = arguments.get("force_full_sync", False)
 
+    if start_date and end_date:
+        start_date, end_date = _normalize_date_range(start_date, end_date)
+
     sync_id = str(uuid.uuid4())
     started_at = datetime.utcnow()
 
